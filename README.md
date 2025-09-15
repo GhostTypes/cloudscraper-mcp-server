@@ -106,7 +106,10 @@ Add this configuration to your MCP settings file:
 Use HTTP transport for web-based integrations and automation platforms:
 
 ```bash
-MCP_TRANSPORT=http MCP_HOST=0.0.0.0 MCP_PORT=8000 uv run server.py
+MCP_TRANSPORT=http
+MCP_HOST=0.0.0.0
+MCP_PORT=8000
+uv run server.py
 ```
 
 This mode is ideal for:
