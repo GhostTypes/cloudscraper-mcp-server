@@ -91,20 +91,6 @@ docker-compose logs -f
 docker-compose down
 ```
 
-## Health Monitoring
-
-The container includes a health check endpoint that verifies the server is running properly. The health check makes a request to the server to ensure it's responsive.
-
-You can manually check the health status:
-
-```bash
-# Check container health
-docker ps
-
-# Manual health check
-curl http://localhost:8000/health
-```
-
 ## Connecting to the Server
 
 Once the container is running, MCP clients can connect to:
@@ -113,7 +99,11 @@ Once the container is running, MCP clients can connect to:
 http://localhost:8000/mcp
 ```
 
-For remote deployments, replace `localhost` with your Docker host's IP address or domain name.
+To connect from another docker container (like n8n)
+```
+http://host.docker.internal:8000/mcp
+```
+
 
 ## Troubleshooting
 
