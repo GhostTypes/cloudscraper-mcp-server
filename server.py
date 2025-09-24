@@ -94,17 +94,16 @@ def clean_html_to_markdown(html_content):
         return html_content
 
 @mcp.tool()
-def scrape_url(url: str, method: str = "GET", clean_content: bool = True) -> str:
+def scrape_url(url: str, method: str = "GET") -> str:
     """
-    Scrape a URL and return raw content only.
+    Scrape a URL and return its content as clean markdown.
     
     Args:
         url: The URL to scrape
         method: HTTP method to use (default: GET)
-        clean_content: Whether to convert HTML to clean markdown (default: True)
         
     Returns:
-        Raw content of the page
+        The content of the page, converted to markdown.
     """
     try:
         # Prepare headers
@@ -127,8 +126,8 @@ def scrape_url(url: str, method: str = "GET", clean_content: bool = True) -> str
         
         if 'text' in content_type or 'html' in content_type:
             content = response.text
-            # Clean HTML to markdown if requested
-            if clean_content and 'html' in content_type:
+            # Convert HTML to markdown
+            if 'html' in content_type:
                 content = clean_html_to_markdown(content)
             return content
         else:
@@ -143,17 +142,16 @@ def scrape_url(url: str, method: str = "GET", clean_content: bool = True) -> str
         return f"Error: {str(e)}"
 
 @mcp.tool()
-def scrape_url_raw(url: str, method: str = "GET", clean_content: bool = True) -> dict:
+def scrape_url_raw(url: str, method: str = "GET") -> dict:
     """
-    Scrape a URL using cloudscraper to bypass Cloudflare protection.
+    Scrape a URL and return the raw, unmodified content.
     
     Args:
         url: The URL to scrape
         method: HTTP method to use (default: GET)
-        clean_content: Whether to convert HTML to clean markdown (default: True)
         
     Returns:
-        Dictionary containing status code, headers, and content
+        A dictionary containing the status code, headers, and raw content of the page.
     """
     try:
         # Prepare headers
@@ -177,9 +175,6 @@ def scrape_url_raw(url: str, method: str = "GET", clean_content: bool = True) ->
         # Get the properly decompressed content
         if 'text' in content_type or 'html' in content_type:
             content = response.text
-            # Clean HTML to markdown if requested
-            if clean_content and 'html' in content_type:
-                content = clean_html_to_markdown(content)
         else:
             # For binary content, try to decode as UTF-8, fallback to base64 if needed
             try:
