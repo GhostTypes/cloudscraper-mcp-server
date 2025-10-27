@@ -10,33 +10,61 @@ A Model Context Protocol (MCP) server that enables AI Agents to scrape informati
 - **Clean Content Extraction**: Returns structured, LLM-friendly content
 - **Docker Ready**: Easy deployment with included Docker configuration
 - **Flexible Response Options**: Choose between detailed responses or raw content only
+- **Built-in Chunking**: Automatically splits responses that exceed 10k tokens and provides guidance for retrieving the remaining chunks
 
 ## Available Tools
 
 ### `scrape_url`
 
-Scrapes a URL and returns comprehensive response data including headers and metadata.
+Scrapes a URL and returns cleaned text (Markdown for HTML pages) along with chunk metadata.
 
 **Parameters:**
 - `url` (string): The URL to scrape
 - `method` (string, optional): HTTP method to use (default: "GET")
 
-**Returns:**
-- `status_code` (integer): HTTP response status code
-- `headers` (object): Response headers
-- `content` (string): Extracted page content
+**Returns:** Object with the following keys:
+- `content` (string): The first chunk of the cleaned content
+- `chunked` (boolean): Indicates whether the payload exceeded 10k tokens and was chunked
+- `chunk_id` (string | null): Identifier to request additional chunks via `get_scrape_chunk`
+- `chunk_index` (integer): Index of the current chunk (1-based)
+- `total_chunks` (integer): Total number of chunks generated for this response
+- `token_count` (integer): Token estimate for the full response
+- `instructions` (string | null): Guidance on how to retrieve any remaining chunks
+- `format` (string): Either `markdown`, `text`, or `binary`
 - `response_time` (number): Request duration in seconds
+- `url` (string): The scraped URL
 
 ### `scrape_url_raw`
 
-Scrapes a URL and returns only the raw page content for simplified processing.
+Scrapes a URL and returns the raw response body, headers, and chunk metadata.
 
 **Parameters:**
 - `url` (string): The URL to scrape
 - `method` (string, optional): HTTP method to use (default: "GET")
 
-**Returns:**
-- `content` (string): Raw page content
+**Returns:** Object with the following keys:
+- `content` (string): The first chunk of the raw content (base64 encoded for binary payloads)
+- `chunked` (boolean): Indicates whether the payload exceeded 10k tokens and was chunked
+- `chunk_id` (string | null): Identifier to request additional chunks via `get_scrape_chunk`
+- `chunk_index` (integer): Index of the current chunk (1-based)
+- `total_chunks` (integer): Total number of chunks generated for this response
+- `token_count` (integer): Token estimate for the full response
+- `instructions` (string | null): Guidance on how to retrieve any remaining chunks
+- `status_code` (integer): HTTP response status code
+- `headers` (object): Cleaned response headers
+- `content_type` (string): MIME type (or `application/base64` when base64 encoded)
+- `response_time` (number): Request duration in seconds
+- `url` (string): The scraped URL
+
+### `get_scrape_chunk`
+
+Retrieves any subsequent chunk for a previously chunked response from either scraping tool.
+
+**Parameters:**
+- `chunk_id` (string): Identifier returned by `scrape_url` or `scrape_url_raw`
+- `chunk_index` (integer): 1-based index of the chunk to fetch
+
+**Returns:** Object mirroring the original scraper response with the requested chunk and updated instructions.
 
 ## Installation
 

@@ -1,7 +1,10 @@
-import cloudscraper
-import time
 import os
-from urllib.parse import unquote
+import time
+import uuid
+from typing import Any, Dict, List, Optional
+
+import cloudscraper
+import tiktoken
 from fastmcp import FastMCP
 
 # Create the FastMCP instance
@@ -29,6 +32,13 @@ HOP_BY_HOP_HEADERS = {
     'transfer-encoding',
     'upgrade',
 }
+
+CHUNK_TOKEN_LIMIT = 10_000
+CHUNK_CACHE_TTL = 60 * 2  # 2 minutes
+
+_tokenizer = tiktoken.get_encoding("cl100k_base")
+
+_chunk_cache: Dict[str, Dict[str, Any]] = {}
 
 def clean_headers(headers):
     """Remove hop-by-hop headers"""
@@ -93,8 +103,104 @@ def clean_html_to_markdown(html_content):
         # Return original content if conversion fails
         return html_content
 
+
+def _cleanup_chunk_cache() -> None:
+    """Remove expired chunk cache entries."""
+    now = time.time()
+    expired_ids = [
+        chunk_id
+        for chunk_id, entry in list(_chunk_cache.items())
+        if now - entry["created_at"] > CHUNK_CACHE_TTL
+    ]
+    for chunk_id in expired_ids:
+        _chunk_cache.pop(chunk_id, None)
+
+
+def _count_tokens(text: str) -> int:
+    """Estimate the number of tokens in the supplied text."""
+    if not text:
+        return 0
+
+    return len(_tokenizer.encode(text))
+
+
+def _chunk_text(text: str, token_limit: int = CHUNK_TOKEN_LIMIT) -> List[str]:
+    """Split text into chunks that respect the token limit."""
+    if not text:
+        return [""]
+
+    tokens = _tokenizer.encode(text)
+    return [
+        _tokenizer.decode(tokens[i:i + token_limit])
+        for i in range(0, len(tokens), token_limit)
+    ]
+
+
+def _store_chunks(chunks: List[str], metadata: Optional[Dict[str, Any]] = None, *, token_count: int) -> str:
+    """Store chunked content and return a chunk identifier."""
+    _cleanup_chunk_cache()
+    chunk_id = str(uuid.uuid4())
+    _chunk_cache[chunk_id] = {
+        "chunks": chunks,
+        "metadata": dict(metadata) if metadata else {},
+        "token_count": token_count,
+        "created_at": time.time(),
+    }
+    return chunk_id
+
+
+def _build_chunk_instructions(chunk_id: str, chunk_index: int, total_chunks: int) -> str:
+    if chunk_index < total_chunks:
+        next_index = chunk_index + 1
+        return (
+            f"This payload is chunk {chunk_index} of {total_chunks} (10,000-token limit). "
+            f"Call `get_scrape_chunk` with chunk_id `{chunk_id}` and chunk_index {next_index} "
+            "to retrieve the next chunk."
+        )
+    return (
+        f"This payload is chunk {chunk_index} of {total_chunks} (10,000-token limit). "
+        "All chunks have been delivered."
+    )
+
+
+def _prepare_chunked_response(
+    content: str,
+    base_payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Return a payload augmented with chunk metadata."""
+    base_payload = base_payload or {}
+    token_count = _count_tokens(content)
+
+    if token_count <= CHUNK_TOKEN_LIMIT:
+        return {
+            **base_payload,
+            "content": content,
+            "chunked": False,
+            "chunk_id": None,
+            "chunk_index": 1,
+            "total_chunks": 1,
+            "token_count": token_count,
+            "instructions": None,
+        }
+
+    chunks = _chunk_text(content, CHUNK_TOKEN_LIMIT)
+    chunk_id = _store_chunks(chunks, metadata=base_payload, token_count=token_count)
+    total_chunks = len(chunks)
+    instructions = _build_chunk_instructions(chunk_id, 1, total_chunks)
+
+    return {
+        **base_payload,
+        "content": chunks[0],
+        "chunked": True,
+        "chunk_id": chunk_id,
+        "chunk_index": 1,
+        "total_chunks": total_chunks,
+        "token_count": token_count,
+        "instructions": instructions,
+    }
+
 @mcp.tool()
-def scrape_url(url: str, method: str = "GET") -> str:
+def scrape_url(url: str, method: str = "GET") -> Dict[str, Any]:
     """
     Scrape a URL and return its content as clean markdown.
     
@@ -103,7 +209,7 @@ def scrape_url(url: str, method: str = "GET") -> str:
         method: HTTP method to use (default: GET)
         
     Returns:
-        The content of the page, converted to markdown.
+        A dictionary containing the first chunk of content plus chunk metadata and request context.
     """
     try:
         # Prepare headers
@@ -123,23 +229,42 @@ def scrape_url(url: str, method: str = "GET") -> str:
         
         # Return raw content - cloudscraper should handle decompression automatically
         content_type = response.headers.get('content-type', '')
-        
+
         if 'text' in content_type or 'html' in content_type:
             content = response.text
             # Convert HTML to markdown
             if 'html' in content_type:
                 content = clean_html_to_markdown(content)
-            return content
+            base_payload = {
+                "url": url,
+                "format": "markdown" if 'html' in content_type else "text",
+                "response_time": elapsed,
+            }
+            return _prepare_chunked_response(content, base_payload)
         else:
             # For binary content, try to decode as UTF-8, fallback to error message
             try:
-                return response.content.decode('utf-8')
+                content = response.content.decode('utf-8')
             except UnicodeDecodeError:
-                return f"[Binary content - {len(response.content)} bytes]"
-        
+                content = f"[Binary content - {len(response.content)} bytes]"
+            base_payload = {
+                "url": url,
+                "format": "binary",
+                "response_time": elapsed,
+            }
+            return _prepare_chunked_response(content, base_payload)
+
     except Exception as e:
         print(f"Scraping Error: {str(e)}")
-        return f"Error: {str(e)}"
+        return {
+            "error": str(e),
+            "chunked": False,
+            "chunk_id": None,
+            "chunk_index": 0,
+            "total_chunks": 0,
+            "token_count": 0,
+            "instructions": None,
+        }
 
 @mcp.tool()
 def scrape_url_raw(url: str, method: str = "GET") -> dict:
@@ -151,7 +276,7 @@ def scrape_url_raw(url: str, method: str = "GET") -> dict:
         method: HTTP method to use (default: GET)
         
     Returns:
-        A dictionary containing the status code, headers, and raw content of the page.
+        A dictionary containing response metadata and chunk-aware raw content.
     """
     try:
         # Prepare headers
@@ -186,21 +311,75 @@ def scrape_url_raw(url: str, method: str = "GET") -> dict:
         
         # Clean headers
         cleaned_headers = clean_headers(response.headers)
-        
-        return {
+
+        base_payload = {
             "status_code": response.status_code,
             "headers": dict(cleaned_headers),
-            "content": content,
             "content_type": content_type,
-            "response_time": elapsed
+            "response_time": elapsed,
+            "url": url,
         }
+
+        return _prepare_chunked_response(content, base_payload)
         
     except Exception as e:
         print(f"Scraping Error: {str(e)}")
         return {
             "error": str(e),
-            "status_code": 500
+            "status_code": 500,
+            "chunked": False,
+            "chunk_id": None,
+            "chunk_index": 0,
+            "total_chunks": 0,
+            "token_count": 0,
+            "instructions": None,
         }
+
+
+@mcp.tool()
+def get_scrape_chunk(chunk_id: str, chunk_index: int) -> Dict[str, Any]:
+    """Retrieve a specific chunk from a previously chunked response."""
+    _cleanup_chunk_cache()
+    entry = _chunk_cache.get(chunk_id)
+
+    if entry is None:
+        return {
+            "error": "Chunk not found or has expired.",
+            "chunked": False,
+            "chunk_id": chunk_id,
+            "chunk_index": chunk_index,
+            "total_chunks": 0,
+            "token_count": 0,
+            "instructions": None,
+        }
+
+    total_chunks = len(entry["chunks"])
+    if chunk_index < 1 or chunk_index > total_chunks:
+        return {
+            **entry.get("metadata", {}),
+            "error": f"chunk_index must be between 1 and {total_chunks}.",
+            "chunked": True,
+            "chunk_id": chunk_id,
+            "chunk_index": chunk_index,
+            "total_chunks": total_chunks,
+            "token_count": entry.get("token_count", 0),
+            "instructions": _build_chunk_instructions(chunk_id, min(max(chunk_index, 1), total_chunks), total_chunks),
+        }
+
+    entry["created_at"] = time.time()
+    chunk_content = entry["chunks"][chunk_index - 1]
+    instructions = _build_chunk_instructions(chunk_id, chunk_index, total_chunks)
+
+    return {
+        **entry.get("metadata", {}),
+        "content": chunk_content,
+        "chunked": True,
+        "chunk_id": chunk_id,
+        "chunk_index": chunk_index,
+        "total_chunks": total_chunks,
+        "token_count": entry.get("token_count", 0),
+        "instructions": instructions,
+    }
 
 if __name__ == "__main__":
     # Check for transport mode from environment variable
