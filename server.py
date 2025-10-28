@@ -389,6 +389,102 @@ def scrape_url_raw(url: str, method: str = "GET", clean_content: bool = True, co
             "status_code": 500
         }
 
+@mcp.tool(description="Scrape a URL and save the raw response body to a file in your current workspace. Always provide the file_path from the project directory you are actively working in so the content lands in the correct location.")
+def scrape_url_to_file(
+    url: str,
+    file_path: str,
+    method: str = "GET",
+    clean_content: bool = False,
+    overwrite: bool = False
+) -> dict:
+    """
+    Scrape a URL and save the entire response body to a file on disk.
+
+    Args:
+        url: The URL to scrape.
+        file_path: The path (relative to your current workspace or absolute) where the response should be saved.
+        method: HTTP method to use (default: GET).
+        clean_content: Whether to convert HTML to clean markdown before saving (default: False).
+        overwrite: Whether to overwrite an existing file at the target path (default: False).
+
+    Returns:
+        Dictionary containing status code, headers, response metadata, and resolved file path information.
+    """
+    if not file_path or not file_path.strip():
+        return {
+            "error": "file_path is required. Provide a path in your current workspace where the content should be saved.",
+            "status_code": 400
+        }
+
+    expanded_path = os.path.expanduser(file_path.strip())
+    target_path = os.path.abspath(expanded_path)
+    directory = os.path.dirname(target_path)
+
+    if directory and not os.path.exists(directory):
+        try:
+            os.makedirs(directory, exist_ok=True)
+        except Exception as e:
+            return {
+                "error": f"Unable to create directory '{directory}': {str(e)}",
+                "status_code": 500
+            }
+
+    if not overwrite and os.path.exists(target_path):
+        return {
+            "error": f"File already exists at {target_path}. Set overwrite=True to replace it.",
+            "status_code": 409
+        }
+
+    try:
+        headers = get_headers()
+        headers = generate_origin_and_ref(url, headers)
+
+        start = time.time()
+        if method.upper() == "GET":
+            response = scraper.get(url, headers=headers, stream=False)
+        else:
+            response = scraper.post(url, headers=headers, stream=False)
+        end = time.time()
+        elapsed = end - start
+
+        content_type = response.headers.get('content-type', '')
+        cleaned_headers = clean_headers(response.headers)
+
+        is_text_content = 'text' in content_type or 'html' in content_type or content_type == ''
+
+        if is_text_content:
+            content = response.text
+            if clean_content and 'html' in content_type:
+                content = clean_html_to_markdown(content)
+            write_mode = "w"
+            write_kwargs = {"encoding": "utf-8"}
+            bytes_length = len(content.encode("utf-8"))
+        else:
+            content = response.content
+            write_mode = "wb"
+            write_kwargs = {}
+            bytes_length = len(content)
+
+        with open(target_path, write_mode, **write_kwargs) as file_handle:
+            file_handle.write(content)
+
+        return {
+            "status_code": response.status_code,
+            "headers": dict(cleaned_headers),
+            "content_type": content_type,
+            "response_time": elapsed,
+            "file_path": target_path,
+            "bytes_written": bytes_length,
+            "message": "Saved response body to file."
+        }
+
+    except Exception as e:
+        print(f"Scraping Error: {str(e)}")
+        return {
+            "error": str(e),
+            "status_code": 500
+        }
+
 if __name__ == "__main__":
     # Check for transport mode from environment variable
     transport = os.environ.get("MCP_TRANSPORT", "stdio")
