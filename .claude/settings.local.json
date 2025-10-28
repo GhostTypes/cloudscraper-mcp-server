@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__cloudscraper-mcp__scrape_url",
+      "mcp__cloudscraper-mcp__scrape_url_raw"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

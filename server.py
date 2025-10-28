@@ -1,11 +1,25 @@
 import cloudscraper
 import time
 import os
+import uuid
 from urllib.parse import unquote
 from fastmcp import FastMCP
+import tiktoken
 
 # Create the FastMCP instance
 mcp = FastMCP("CloudScraper MCP Server")
+
+# Chunk storage with expiry (stores: chunk_id -> {chunks: list, expiry: timestamp})
+chunk_cache = {}
+CHUNK_EXPIRY_SECONDS = 120  # 2 minutes
+MAX_TOKENS_PER_CHUNK = 10000
+
+# Initialize tiktoken encoder
+try:
+    encoding = tiktoken.get_encoding("cl100k_base")
+except Exception:
+    # Fallback if tiktoken has issues
+    encoding = None
 
 # Initialize cloudscraper with browser settings
 scraper = cloudscraper.create_scraper(
@@ -17,6 +31,71 @@ scraper = cloudscraper.create_scraper(
     delay=1,
     allow_brotli=True
 )
+
+# Chunking helper functions
+def count_tokens(text: str) -> int:
+    """Count the number of tokens in a text string using tiktoken."""
+    if encoding is None:
+        # Fallback: approximate 4 characters per token
+        return len(text) // 4
+    try:
+        return len(encoding.encode(text))
+    except Exception:
+        # Fallback on error
+        return len(text) // 4
+
+def cleanup_expired_chunks():
+    """Remove expired chunks from the cache."""
+    current_time = time.time()
+    expired_keys = [
+        key for key, value in chunk_cache.items()
+        if value['expiry'] < current_time
+    ]
+    for key in expired_keys:
+        del chunk_cache[key]
+
+def split_content_into_chunks(content: str, max_tokens: int = MAX_TOKENS_PER_CHUNK) -> list[str]:
+    """Split content into chunks based on token count."""
+    if encoding is None:
+        # Fallback: split by character count (max_tokens * 4 chars per token)
+        chunk_size = max_tokens * 4
+        return [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
+
+    # Encode the entire content
+    tokens = encoding.encode(content)
+    chunks = []
+
+    # Split tokens into chunks
+    for i in range(0, len(tokens), max_tokens):
+        chunk_tokens = tokens[i:i+max_tokens]
+        chunk_text = encoding.decode(chunk_tokens)
+        chunks.append(chunk_text)
+
+    return chunks
+
+def store_chunks(chunks: list[str]) -> str:
+    """Store chunks in cache and return a unique chunk ID."""
+    cleanup_expired_chunks()
+    chunk_id = str(uuid.uuid4())
+    chunk_cache[chunk_id] = {
+        'chunks': chunks,
+        'expiry': time.time() + CHUNK_EXPIRY_SECONDS
+    }
+    return chunk_id
+
+def get_chunk(chunk_id: str, index: int) -> tuple[str | None, int]:
+    """Retrieve a specific chunk by ID and index. Returns (chunk, total_chunks) or (None, 0)."""
+    cleanup_expired_chunks()
+    if chunk_id not in chunk_cache:
+        return None, 0
+
+    cache_entry = chunk_cache[chunk_id]
+    chunks = cache_entry['chunks']
+
+    if index < 0 or index >= len(chunks):
+        return None, 0
+
+    return chunks[index], len(chunks)
 
 # Hop-by-hop headers that should be removed
 HOP_BY_HOP_HEADERS = {
@@ -94,22 +173,48 @@ def clean_html_to_markdown(html_content):
         return html_content
 
 @mcp.tool()
-def scrape_url(url: str, method: str = "GET") -> str:
+def scrape_url(url: str, method: str = "GET", clean_content: bool = True, continuation_token: str = None) -> str:
     """
-    Scrape a URL and return its content as clean markdown.
-    
+    Scrape a URL and return raw content only.
+
     Args:
         url: The URL to scrape
         method: HTTP method to use (default: GET)
-        
+        clean_content: Whether to convert HTML to clean markdown (default: True)
+        continuation_token: Token to retrieve next chunk of a previously scraped large response (format: "chunk_id:index")
+
     Returns:
-        The content of the page, converted to markdown.
+        Raw content of the page. If content exceeds 10k tokens, it will be chunked and include instructions
+        for retrieving remaining chunks using the continuation_token parameter.
     """
+    # Handle continuation token for chunked responses
+    if continuation_token:
+        try:
+            chunk_id, chunk_index_str = continuation_token.split(":", 1)
+            chunk_index = int(chunk_index_str)
+
+            chunk_content, total_chunks = get_chunk(chunk_id, chunk_index)
+
+            if chunk_content is None:
+                return "Error: Chunk not found or expired. Chunks expire after 2 minutes. Please re-scrape the original URL."
+
+            # If there are more chunks, add continuation instructions
+            if chunk_index + 1 < total_chunks:
+                next_token = f"{chunk_id}:{chunk_index + 1}"
+                instruction = f"\n\n--- CHUNK {chunk_index + 1} of {total_chunks} ---\nTo get the next chunk, call scrape_url again with continuation_token=\"{next_token}\""
+                return chunk_content + instruction
+            else:
+                return chunk_content + f"\n\n--- FINAL CHUNK ({chunk_index + 1} of {total_chunks}) ---"
+
+        except Exception as e:
+            return f"Error processing continuation token: {str(e)}"
+
+    # Normal scraping logic
     try:
         # Prepare headers
         headers = get_headers()
         headers = generate_origin_and_ref(url, headers)
-        
+
         # Make the request with stream=False to ensure proper decompression
         start = time.time()
         if method.upper() == "GET":
@@ -118,46 +223,102 @@ def scrape_url(url: str, method: str = "GET") -> str:
             response = scraper.post(url, headers=headers, stream=False)
         end = time.time()
         elapsed = end - start
-        
+
         print(f"Scraped {url} in {elapsed:.6f} seconds")
-        
+
         # Return raw content - cloudscraper should handle decompression automatically
         content_type = response.headers.get('content-type', '')
-        
+
         if 'text' in content_type or 'html' in content_type:
             content = response.text
-            # Convert HTML to markdown
-            if 'html' in content_type:
+            # Clean HTML to markdown if requested
+            if clean_content and 'html' in content_type:
                 content = clean_html_to_markdown(content)
-            return content
         else:
             # For binary content, try to decode as UTF-8, fallback to error message
             try:
-                return response.content.decode('utf-8')
+                content = response.content.decode('utf-8')
             except UnicodeDecodeError:
                 return f"[Binary content - {len(response.content)} bytes]"
-        
+
+        # Check if content needs to be chunked
+        token_count = count_tokens(content)
+
+        if token_count > MAX_TOKENS_PER_CHUNK:
+            # Split into chunks and store
+            chunks = split_content_into_chunks(content, MAX_TOKENS_PER_CHUNK)
+            chunk_id = store_chunks(chunks)
+
+            # Return first chunk with instructions
+            first_chunk = chunks[0]
+            next_token = f"{chunk_id}:1"
+            instruction = f"\n\n--- CHUNK 1 of {len(chunks)} ---\nThis response was chunked due to size ({token_count} tokens). To get the next chunk, call scrape_url again with continuation_token=\"{next_token}\""
+            return first_chunk + instruction
+
+        return content
+
     except Exception as e:
         print(f"Scraping Error: {str(e)}")
         return f"Error: {str(e)}"
 
 @mcp.tool()
-def scrape_url_raw(url: str, method: str = "GET") -> dict:
+def scrape_url_raw(url: str, method: str = "GET", clean_content: bool = True, continuation_token: str = None) -> dict:
     """
-    Scrape a URL and return the raw, unmodified content.
-    
+    Scrape a URL using cloudscraper to bypass Cloudflare protection.
+
     Args:
         url: The URL to scrape
         method: HTTP method to use (default: GET)
-        
+        clean_content: Whether to convert HTML to clean markdown (default: True)
+        continuation_token: Token to retrieve next chunk of a previously scraped large response (format: "chunk_id:index")
+
     Returns:
-        A dictionary containing the status code, headers, and raw content of the page.
+        Dictionary containing status code, headers, and content. For large responses (>10k tokens),
+        includes chunking metadata with continuation_token for retrieving additional chunks.
     """
+    # Handle continuation token for chunked responses
+    if continuation_token:
+        try:
+            chunk_id, chunk_index_str = continuation_token.split(":", 1)
+            chunk_index = int(chunk_index_str)
+
+            chunk_content, total_chunks = get_chunk(chunk_id, chunk_index)
+
+            if chunk_content is None:
+                return {
+                    "error": "Chunk not found or expired. Chunks expire after 2 minutes. Please re-scrape the original URL.",
+                    "status_code": 404
+                }
+
+            # Build response with chunk metadata
+            result = {
+                "content": chunk_content,
+                "chunked": True,
+                "chunk_index": chunk_index + 1,  # 1-indexed for user display
+                "total_chunks": total_chunks
+            }
+
+            # If there are more chunks, add continuation token
+            if chunk_index + 1 < total_chunks:
+                result["continuation_token"] = f"{chunk_id}:{chunk_index + 1}"
+                result["message"] = f"Chunk {chunk_index + 1} of {total_chunks}. Use continuation_token to get the next chunk."
+            else:
+                result["message"] = f"Final chunk ({chunk_index + 1} of {total_chunks})."
+
+            return result
+
+        except Exception as e:
+            return {
+                "error": f"Error processing continuation token: {str(e)}",
+                "status_code": 400
+            }
+
+    # Normal scraping logic
     try:
         # Prepare headers
         headers = get_headers()
         headers = generate_origin_and_ref(url, headers)
-        
+
         # Make the request
         start = time.time()
         if method.upper() == "GET":
@@ -166,15 +327,18 @@ def scrape_url_raw(url: str, method: str = "GET") -> dict:
             response = scraper.post(url, headers=headers, stream=False)
         end = time.time()
         elapsed = end - start
-        
+
         print(f"Scraped {url} in {elapsed:.6f} seconds")
-        
+
         # Get the properly decompressed content
         content_type = response.headers.get('content-type', '')
-        
+
         # Get the properly decompressed content
         if 'text' in content_type or 'html' in content_type:
             content = response.text
+            # Clean HTML to markdown if requested
+            if clean_content and 'html' in content_type:
+                content = clean_html_to_markdown(content)
         else:
             # For binary content, try to decode as UTF-8, fallback to base64 if needed
             try:
@@ -183,10 +347,33 @@ def scrape_url_raw(url: str, method: str = "GET") -> dict:
                 import base64
                 content = base64.b64encode(response.content).decode('utf-8')
                 content_type = "application/base64"
-        
+
         # Clean headers
         cleaned_headers = clean_headers(response.headers)
-        
+
+        # Check if content needs to be chunked
+        token_count = count_tokens(content)
+
+        if token_count > MAX_TOKENS_PER_CHUNK:
+            # Split into chunks and store
+            chunks = split_content_into_chunks(content, MAX_TOKENS_PER_CHUNK)
+            chunk_id = store_chunks(chunks)
+
+            # Return first chunk with metadata
+            return {
+                "status_code": response.status_code,
+                "headers": dict(cleaned_headers),
+                "content": chunks[0],
+                "content_type": content_type,
+                "response_time": elapsed,
+                "chunked": True,
+                "chunk_index": 1,
+                "total_chunks": len(chunks),
+                "continuation_token": f"{chunk_id}:1",
+                "total_tokens": token_count,
+                "message": f"Response chunked into {len(chunks)} parts due to size ({token_count} tokens). Use continuation_token to get the next chunk."
+            }
+
         return {
             "status_code": response.status_code,
             "headers": dict(cleaned_headers),
@@ -194,7 +381,7 @@ def scrape_url_raw(url: str, method: str = "GET") -> dict:
             "content_type": content_type,
             "response_time": elapsed
         }
-        
+
     except Exception as e:
         print(f"Scraping Error: {str(e)}")
         return {
