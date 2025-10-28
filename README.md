@@ -13,30 +13,66 @@ A Model Context Protocol (MCP) server that enables AI Agents to scrape informati
 
 ## Available Tools
 
+### Shared request parameters (`scrape_url`, `scrape_url_raw`)
+
+Both tools accept the following arguments:
+
+- `url` (string): Target URL to fetch.
+- `method` (string, optional): HTTP method to use (default: `"GET"`).
+- `clean_content` (boolean, optional): Convert HTML responses to clean Markdown before returning content (default: `true`).
+- `continuation_token` (string, optional): Token generated from a prior chunked response to request the next chunk (`"chunk_id:index"`).
+
 ### `scrape_url`
 
-Scrapes a URL and returns comprehensive response data including headers and metadata.
+Scrapes a URL and returns only the response body as a string. When the result exceeds 10k tokens it is chunked and the returned text contains instructions for retrieving the remaining chunks with `continuation_token`.
 
 **Parameters:**
-- `url` (string): The URL to scrape
-- `method` (string, optional): HTTP method to use (default: "GET")
+- All arguments listed in [Shared request parameters](#shared-request-parameters-scrape_url-scrape_url_raw).
 
 **Returns:**
-- `status_code` (integer): HTTP response status code
-- `headers` (object): Response headers
-- `content` (string): Extracted page content
-- `response_time` (number): Request duration in seconds
+- Raw or cleaned page content as a string. Chunked responses embed continuation guidance directly in the text, and errors are returned as human-readable strings.
 
 ### `scrape_url_raw`
 
-Scrapes a URL and returns only the raw page content for simplified processing.
+Scrapes a URL and returns structured metadata with the response content. Supports chunked retrieval for large pages and base64-encodes binary payloads.
 
 **Parameters:**
-- `url` (string): The URL to scrape
-- `method` (string, optional): HTTP method to use (default: "GET")
+- All arguments listed in [Shared request parameters](#shared-request-parameters-scrape_url-scrape_url_raw).
 
 **Returns:**
-- `content` (string): Raw page content
+- `status_code` (integer): HTTP response status code.
+- `headers` (object): Response headers with hop-by-hop headers removed.
+- `content` (string): Raw or cleaned page content, or the current chunk when chunked. Binary responses are returned as base64 strings with `content_type` set to `"application/base64"`.
+- `content_type` (string): MIME type of the response body.
+- `response_time` (number): Request duration in seconds.
+- `chunked` (boolean, optional): Present when the response was chunked due to size.
+- `chunk_index` (integer, optional): 1-based index of the current chunk when chunked.
+- `total_chunks` (integer, optional): Total number of available chunks when chunked.
+- `continuation_token` (string, optional): Token to request the next chunk when more data remains.
+- `total_tokens` (integer, optional): Token count of the full response when chunked.
+- `message` (string, optional): Human-readable status about chunk progress.
+- `error` (string, optional): Error description when the request fails or a continuation token is invalid.
+
+### `scrape_url_to_file`
+
+Scrapes a URL and saves the response body to a file on disk in the current workspace. Directories are created as needed and existing files are protected unless `overwrite` is set.
+
+**Parameters:**
+- `url` (string): Target URL to fetch.
+- `file_path` (string): Relative or absolute path where the response body should be saved.
+- `method` (string, optional): HTTP method to use (default: `"GET"`).
+- `clean_content` (boolean, optional): Convert HTML responses to clean Markdown before writing (default: `false`).
+- `overwrite` (boolean, optional): Replace the file if it already exists (default: `false`).
+
+**Returns:**
+- `status_code` (integer): HTTP response status code.
+- `headers` (object): Response headers with hop-by-hop headers removed.
+- `content_type` (string): MIME type of the saved response.
+- `response_time` (number): Request duration in seconds.
+- `file_path` (string): Absolute path to the saved file.
+- `bytes_written` (integer): Number of bytes written to disk.
+- `message` (string): Confirmation that the response was saved.
+- `error` (string, optional): Error description when the request fails or the file cannot be written.
 
 ## Installation
 
