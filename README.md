@@ -1,113 +1,278 @@
+<div align="center">
+
 # CloudScraper MCP Server
 
-A Model Context Protocol (MCP) server that enables AI Agents to scrape information from various pages
+### A Model Context Protocol server that enables AI agents to bypass Cloudflare protection and scrape web content
 
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![FastMCP](https://img.shields.io/badge/FastMCP-2.0%2B-green.svg)](https://github.com/jlowin/fastmcp)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)](DOCKER.md)
 
-## Features
+</div>
 
-- **Cloudflare Bypass**: Automatically handles Cloudflare protection, utilizing [cloudscraper](https://github.com/VeNoMouS/cloudscraper)
-- **Multiple Transport Protocols**: Supports both stdio and HTTP transport for different use cases
-- **Clean Content Extraction**: Returns structured, LLM-friendly content
-- **Docker Ready**: Easy deployment with included Docker configuration
-- **Flexible Response Options**: Choose between detailed responses or raw content only
+---
 
-## Available Tools
+<div align="center">
 
-### Shared request parameters (`scrape_url`, `scrape_url_raw`)
+## Core Features
 
-Both tools accept the following arguments:
+</div>
 
-- `url` (string): Target URL to fetch.
-- `method` (string, optional): HTTP method to use (default: `"GET"`).
-- `clean_content` (boolean, optional): Convert HTML responses to clean Markdown before returning content (default: `true`).
-- `continuation_token` (string, optional): Token generated from a prior chunked response to request the next chunk (`"chunk_id:index"`).
+<div align="center">
 
-### `scrape_url`
+| Feature | Description |
+|---------|-------------|
+| **Cloudflare Bypass** | Automatically handles Cloudflare protection using cloudscraper library |
+| **Multiple Transports** | Supports both stdio and HTTP transport protocols |
+| **Content Cleaning** | Converts HTML to clean, LLM-friendly Markdown format |
+| **Smart Chunking** | Automatically splits large responses into 10k token chunks |
+| **Docker Support** | Production-ready containerized deployment |
+| **Multiple Methods** | Supports GET and POST HTTP methods |
+| **Binary Handling** | Base64 encoding for non-text content |
+| **File Export** | Save scraped content directly to disk |
 
-Scrapes a URL and returns only the response body as a string. When the result exceeds 10k tokens it is chunked and the returned text contains instructions for retrieving the remaining chunks with `continuation_token`.
+</div>
 
-**Parameters:**
-- All arguments listed in [Shared request parameters](#shared-request-parameters-scrape_url-scrape_url_raw).
+---
 
-**Returns:**
-- Raw or cleaned page content as a string. Chunked responses embed continuation guidance directly in the text, and errors are returned as human-readable strings.
+<div align="center">
 
-### `scrape_url_raw`
+## Available MCP Tools
 
-Scrapes a URL and returns structured metadata with the response content. Supports chunked retrieval for large pages and base64-encodes binary payloads.
+</div>
 
-**Parameters:**
-- All arguments listed in [Shared request parameters](#shared-request-parameters-scrape_url-scrape_url_raw).
+<div align="center">
 
-**Returns:**
-- `status_code` (integer): HTTP response status code.
-- `headers` (object): Response headers with hop-by-hop headers removed.
-- `content` (string): Raw or cleaned page content, or the current chunk when chunked. Binary responses are returned as base64 strings with `content_type` set to `"application/base64"`.
-- `content_type` (string): MIME type of the response body.
-- `response_time` (number): Request duration in seconds.
-- `chunked` (boolean, optional): Present when the response was chunked due to size.
-- `chunk_index` (integer, optional): 1-based index of the current chunk when chunked.
-- `total_chunks` (integer, optional): Total number of available chunks when chunked.
-- `continuation_token` (string, optional): Token to request the next chunk when more data remains.
-- `total_tokens` (integer, optional): Token count of the full response when chunked.
-- `message` (string, optional): Human-readable status about chunk progress.
-- `error` (string, optional): Error description when the request fails or a continuation token is invalid.
+### Tool Comparison
 
-### `scrape_url_to_file`
+| Tool | Return Type | Use Case | Chunking Support | File Output |
+|------|-------------|----------|------------------|-------------|
+| **scrape_url** | String (content only) | Quick content retrieval for AI processing | Yes | No |
+| **scrape_url_raw** | Dictionary (metadata + content) | Full response details with headers and timing | Yes | No |
+| **scrape_url_to_file** | Dictionary (save confirmation) | Export content to workspace files | No | Yes |
 
-Scrapes a URL and saves the response body to a file on disk in the current workspace. Directories are created as needed and existing files are protected unless `overwrite` is set.
+</div>
 
-**Parameters:**
-- `url` (string): Target URL to fetch.
-- `file_path` (string): Relative or absolute path where the response body should be saved.
-- `method` (string, optional): HTTP method to use (default: `"GET"`).
-- `clean_content` (boolean, optional): Convert HTML responses to clean Markdown before writing (default: `false`).
-- `overwrite` (boolean, optional): Replace the file if it already exists (default: `false`).
+---
 
-**Returns:**
-- `status_code` (integer): HTTP response status code.
-- `headers` (object): Response headers with hop-by-hop headers removed.
-- `content_type` (string): MIME type of the saved response.
-- `response_time` (number): Request duration in seconds.
-- `file_path` (string): Absolute path to the saved file.
-- `bytes_written` (integer): Number of bytes written to disk.
-- `message` (string): Confirmation that the response was saved.
-- `error` (string, optional): Error description when the request fails or the file cannot be written.
+<div align="center">
+
+### Shared Parameters
+
+</div>
+
+<div align="center">
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `url` | string | Yes | - | Target URL to scrape |
+| `method` | string | No | "GET" | HTTP method (GET or POST) |
+| `clean_content` | boolean | No | true | Convert HTML to Markdown |
+| `continuation_token` | string | No | null | Token for retrieving next chunk |
+
+</div>
+
+---
+
+<div align="center">
+
+### scrape_url Response Fields
+
+</div>
+
+<div align="center">
+
+| Field | Type | Description |
+|-------|------|-------------|
+| Response | string | Page content with chunk instructions if applicable |
+
+**Note:** When content exceeds 10k tokens, response includes continuation instructions embedded in the text.
+
+</div>
+
+---
+
+<div align="center">
+
+### scrape_url_raw Response Fields
+
+</div>
+
+<div align="center">
+
+| Field | Type | Always Present | Description |
+|-------|------|----------------|-------------|
+| `status_code` | integer | Yes | HTTP response status code |
+| `headers` | object | Yes | Response headers (hop-by-hop headers removed) |
+| `content` | string | Yes | Page content or current chunk |
+| `content_type` | string | Yes | MIME type of response |
+| `response_time` | number | Yes | Request duration in seconds |
+| `chunked` | boolean | When chunked | Indicates response was split |
+| `chunk_index` | integer | When chunked | Current chunk number (1-based) |
+| `total_chunks` | integer | When chunked | Total number of chunks |
+| `continuation_token` | string | When more chunks | Token for next chunk retrieval |
+| `total_tokens` | integer | When chunked | Total tokens in full response |
+| `message` | string | When chunked | Human-readable chunk status |
+| `error` | string | On failure | Error description |
+
+</div>
+
+---
+
+<div align="center">
+
+### scrape_url_to_file Parameters
+
+</div>
+
+<div align="center">
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `url` | string | Yes | - | Target URL to scrape |
+| `file_path` | string | Yes | - | Path where content should be saved |
+| `method` | string | No | "GET" | HTTP method (GET or POST) |
+| `clean_content` | boolean | No | false | Convert HTML to Markdown before saving |
+| `overwrite` | boolean | No | false | Replace file if it exists |
+
+</div>
+
+---
+
+<div align="center">
+
+### scrape_url_to_file Response Fields
+
+</div>
+
+<div align="center">
+
+| Field | Type | Always Present | Description |
+|-------|------|----------------|-------------|
+| `status_code` | integer | Yes | HTTP response status code |
+| `headers` | object | Yes | Response headers (hop-by-hop headers removed) |
+| `content_type` | string | Yes | MIME type of saved content |
+| `response_time` | number | Yes | Request duration in seconds |
+| `file_path` | string | On success | Absolute path to saved file |
+| `bytes_written` | integer | On success | Number of bytes written to disk |
+| `message` | string | On success | Confirmation message |
+| `error` | string | On failure | Error description |
+
+</div>
+
+---
+
+<div align="center">
 
 ## Installation
 
-1. Clone the repository:
+</div>
+
+<div align="center">
+
+### Prerequisites
+
+</div>
+
+<div align="center">
+
+| Requirement | Version | Purpose |
+|-------------|---------|---------|
+| Python | 3.10+ | Runtime environment |
+| uv | Latest | Dependency management |
+| Git | Any | Repository cloning |
+
+</div>
+
+<div align="center">
+
+### Setup Steps
+
+</div>
+
+Clone the repository and install dependencies:
+
 ```bash
 git clone https://github.com/yourusername/cloudscraper-mcp-server.git
 cd cloudscraper-mcp-server
-```
-
-2. Install dependencies using uv:
-```bash
 uv sync
 ```
 
+---
+
+<div align="center">
+
 ## Configuration
 
-The server supports two transport protocols depending on your use case:
+</div>
 
-### Stdio Transport
+<div align="center">
 
-Use stdio transport for direct integration with AI tools like Claude Code and VSCode:
+### Transport Protocols
+
+</div>
+
+<div align="center">
+
+| Transport | Best For | Configuration |
+|-----------|----------|---------------|
+| **stdio** | Claude Code, VSCode, Direct AI integration | Default mode, no environment variables needed |
+| **http** | n8n, Web apps, API integrations, Remote access | Requires MCP_TRANSPORT=http |
+
+</div>
+
+---
+
+<div align="center">
+
+### Environment Variables
+
+</div>
+
+<div align="center">
+
+| Variable | Default | Options | Description |
+|----------|---------|---------|-------------|
+| `MCP_TRANSPORT` | stdio | stdio, http | Transport protocol selection |
+| `MCP_HOST` | 0.0.0.0 | Any valid IP | Host binding for HTTP mode |
+| `MCP_PORT` | 8000 | Any valid port | Port for HTTP mode |
+
+</div>
+
+---
+
+<div align="center">
+
+## Usage Examples
+
+</div>
+
+<div align="center">
+
+### Running with Stdio Transport (Default)
+
+</div>
 
 ```bash
 uv run server.py
 ```
 
-This is the default mode and works best for:
-- Claude Code integration
-- VSCode with MCP extensions
-- Direct AI assistant communication
-- Command-line usage
+<div align="center">
 
-#### Claude Code Configuration
+### Running with HTTP Transport
 
-Add the server to Claude Code using the CLI:
+</div>
+
+```bash
+MCP_TRANSPORT=http MCP_HOST=0.0.0.0 MCP_PORT=8000 uv run server.py
+```
+
+<div align="center">
+
+### Claude Code Integration
+
+</div>
 
 ```bash
 claude mcp add cloudscraper-mcp \
@@ -117,9 +282,11 @@ claude mcp add cloudscraper-mcp \
   --directory "/path/to/cloudscraper-mcp-server"
 ```
 
-#### VSCode/IDE Configuration
+<div align="center">
 
-Add this configuration to your MCP settings file:
+### VSCode/IDE Configuration
+
+</div>
 
 ```json
 {
@@ -129,39 +296,97 @@ Add this configuration to your MCP settings file:
       "command": "uv",
       "args": [
         "run",
-        "server.py",
-      ]
-      "cwd":  "/path/to/cloudscraper-mcp-server/server.py"
+        "server.py"
+      ],
+      "cwd": "/path/to/cloudscraper-mcp-server"
     }
   }
 }
 ```
 
-### HTTP Transport
+---
 
-Use HTTP transport for web-based integrations and automation platforms:
-
-```bash
-MCP_TRANSPORT=http
-MCP_HOST=0.0.0.0
-MCP_PORT=8000
-uv run server.py
-```
-
-This mode is ideal for:
-- n8n workflow automation
-- Web-based AI applications
-- API integrations
-- Remote access scenarios
-
-### Environment Variables
-
-| Variable | Description | Default | Options |
-|----------|-------------|---------|---------|
-| `MCP_TRANSPORT` | Transport protocol | `stdio` | `stdio`, `http` |
-| `MCP_HOST` | Host to bind to (HTTP mode only) | `0.0.0.0` | Any valid IP |
-| `MCP_PORT` | Port to listen on (HTTP mode only) | `8000` | Any valid port |
+<div align="center">
 
 ## Docker Deployment
 
-For containerized deployment, see [DOCKER.md](DOCKER.md) for complete Docker setup instructions including building, running, and using Docker Compose.
+</div>
+
+<div align="center">
+
+For containerized deployment instructions, see [DOCKER.md](DOCKER.md)
+
+</div>
+
+---
+
+<div align="center">
+
+## Technical Stack
+
+</div>
+
+<div align="center">
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **Protocol** | FastMCP 2.0+ | Model Context Protocol implementation |
+| **Scraping** | cloudscraper 1.2.71+ | Cloudflare bypass engine |
+| **Compression** | brotli 1.0.9+ | Response decompression |
+| **Parsing** | beautifulsoup4 4.10.0+ | HTML parsing |
+| **Conversion** | markdownify 0.11.6+ | HTML to Markdown transformation |
+| **Tokenization** | tiktoken 0.5.0+ | Token counting for chunking |
+
+</div>
+
+---
+
+<div align="center">
+
+## Advanced Features
+
+</div>
+
+<div align="center">
+
+### Response Chunking System
+
+</div>
+
+<div align="center">
+
+| Feature | Value | Description |
+|---------|-------|-------------|
+| **Max Tokens Per Chunk** | 10,000 | Maximum tokens in a single response |
+| **Chunk Expiry** | 2 minutes | Cache lifetime for chunk retrieval |
+| **Token Encoding** | cl100k_base | tiktoken encoding model |
+| **Continuation Pattern** | chunk_id:index | Token format for sequential retrieval |
+
+</div>
+
+---
+
+<div align="center">
+
+### Security Headers
+
+</div>
+
+<div align="center">
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| User-Agent | Chrome 120 | Browser impersonation |
+| Sec-Ch-Ua | Chrome/Chromium | Client hints |
+| Sec-Fetch-* | cors/same-origin | Fetch metadata |
+| Origin/Referer | Auto-generated | Request legitimacy |
+
+</div>
+
+---
+
+<div align="center">
+
+Made with CloudScraper and FastMCP
+
+</div>
