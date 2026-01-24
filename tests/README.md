@@ -66,7 +66,10 @@ This test suite contains **24 integration tests** organized into 7 test classes:
 ### Install Dependencies
 
 ```bash
-# Install project with test dependencies
+# Using uv (recommended)
+uv sync --group dev
+
+# Using pip
 pip install -e ".[dev]"
 
 # Or install pytest directly
@@ -76,7 +79,10 @@ pip install pytest pytest-asyncio
 ### Run All Tests
 
 ```bash
-# Basic run
+# Using uv (recommended)
+uv run pytest
+
+# Or with pytest directly
 pytest
 
 # Verbose output
