@@ -5,7 +5,8 @@
 ### A Model Context Protocol server that enables AI agents to bypass Cloudflare protection and scrape web content
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![FastMCP](https://img.shields.io/badge/FastMCP-2.0%2B-green.svg)](https://github.com/jlowin/fastmcp)
+[![FastMCP](https://img.shields.io/badge/FastMCP-3.0%2B-green.svg)](https://github.com/jlowin/fastmcp)
+[![Tests](https://img.shields.io/badge/tests-24%20passing-brightgreen.svg)](tests/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)](DOCKER.md)
 
@@ -330,12 +331,13 @@ For containerized deployment instructions, see [DOCKER.md](DOCKER.md)
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **Protocol** | FastMCP 2.0+ | Model Context Protocol implementation |
+| **Protocol** | FastMCP 3.0+ | Model Context Protocol implementation |
 | **Scraping** | cloudscraper 1.2.71+ | Cloudflare bypass engine |
 | **Compression** | brotli 1.0.9+ | Response decompression |
 | **Parsing** | beautifulsoup4 4.10.0+ | HTML parsing |
 | **Conversion** | markdownify 0.11.6+ | HTML to Markdown transformation |
 | **Tokenization** | tiktoken 0.5.0+ | Token counting for chunking |
+| **Testing** | pytest 8.0+ | Integration test suite |
 
 </div>
 
