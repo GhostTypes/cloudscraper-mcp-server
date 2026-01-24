@@ -9,10 +9,11 @@ This test suite validates:
 5. Chunking functionality works for large responses
 """
 
-import pytest
-import requests
 import json
 import os
+
+import pytest
+import requests
 from fastmcp import Client
 
 
@@ -53,10 +54,8 @@ class TestStandardRequestsBlocked:
         """
         response = requests.get(
             cloudflare_test_url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            },
-            timeout=10
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+            timeout=10,
         )
 
         # Standard requests should either be blocked with 403/429
@@ -74,7 +73,9 @@ class TestScrapeUrlTool:
 
     @pytest.mark.asyncio
     @pytest.mark.cloudflare
-    async def test_bypasses_cloudflare(self, client: Client, cloudflare_test_url, expected_html_indicators):
+    async def test_bypasses_cloudflare(
+        self, client: Client, cloudflare_test_url, expected_html_indicators
+    ):
         """
         cloudscraper should successfully bypass Cloudflare protection.
 
@@ -84,8 +85,8 @@ class TestScrapeUrlTool:
             "scrape_url",
             {
                 "url": cloudflare_test_url,
-                "clean_content": False  # Get raw HTML to verify it's real content
-            }
+                "clean_content": False,  # Get raw HTML to verify it's real content
+            },
         )
 
         # Should not be an error
@@ -111,11 +112,7 @@ class TestScrapeUrlTool:
     async def test_returns_markdown_when_cleaned(self, client: Client, cloudflare_test_url):
         """With clean_content=True, should return markdown format."""
         result = await client.call_tool(
-            "scrape_url",
-            {
-                "url": cloudflare_test_url,
-                "clean_content": True
-            }
+            "scrape_url", {"url": cloudflare_test_url, "clean_content": True}
         )
 
         assert not result.is_error
@@ -130,8 +127,7 @@ class TestScrapeUrlTool:
     async def test_handles_simple_url(self, client: Client, simple_test_url):
         """Should handle non-Cloudflare URLs without issues."""
         result = await client.call_tool(
-            "scrape_url",
-            {"url": simple_test_url, "clean_content": False}
+            "scrape_url", {"url": simple_test_url, "clean_content": False}
         )
 
         assert not result.is_error
@@ -143,8 +139,7 @@ class TestScrapeUrlTool:
     async def test_invalid_url_returns_error(self, client: Client):
         """Invalid URLs should return an error message."""
         result = await client.call_tool(
-            "scrape_url",
-            {"url": "not-a-valid-url", "clean_content": False}
+            "scrape_url", {"url": "not-a-valid-url", "clean_content": False}
         )
 
         # FastMCP may wrap the error or return error text
@@ -155,8 +150,7 @@ class TestScrapeUrlTool:
     async def test_chunking_information_included(self, client: Client, cloudflare_test_url):
         """For large responses, chunking instructions should be included."""
         result = await client.call_tool(
-            "scrape_url",
-            {"url": cloudflare_test_url, "clean_content": False}
+            "scrape_url", {"url": cloudflare_test_url, "clean_content": False}
         )
 
         content = result.content[0].text
@@ -179,11 +173,7 @@ class TestScrapeUrlRawTool:
     async def test_bypasses_cloudflare_raw(self, client: Client, cloudflare_test_url):
         """scrape_url_raw should successfully bypass Cloudflare with metadata."""
         result = await client.call_tool(
-            "scrape_url_raw",
-            {
-                "url": cloudflare_test_url,
-                "clean_content": False
-            }
+            "scrape_url_raw", {"url": cloudflare_test_url, "clean_content": False}
         )
 
         assert not result.is_error
@@ -213,8 +203,7 @@ class TestScrapeUrlRawTool:
     async def test_returns_structured_data(self, client: Client, simple_test_url):
         """Should return properly structured JSON with all expected fields."""
         result = await client.call_tool(
-            "scrape_url_raw",
-            {"url": simple_test_url, "clean_content": False}
+            "scrape_url_raw", {"url": simple_test_url, "clean_content": False}
         )
 
         assert not result.is_error
@@ -233,11 +222,12 @@ class TestScrapeUrlRawTool:
         assert isinstance(data["response_time"], (int, float))
 
     @pytest.mark.asyncio
-    async def test_includes_chunking_metadata_when_needed(self, client: Client, cloudflare_test_url):
+    async def test_includes_chunking_metadata_when_needed(
+        self, client: Client, cloudflare_test_url
+    ):
         """For large responses, should include chunking metadata."""
         result = await client.call_tool(
-            "scrape_url_raw",
-            {"url": cloudflare_test_url, "clean_content": False}
+            "scrape_url_raw", {"url": cloudflare_test_url, "clean_content": False}
         )
 
         data = json.loads(result.content[0].text)
@@ -271,8 +261,8 @@ class TestScrapeUrlToFileTool:
                 "url": cloudflare_test_url,
                 "file_path": temp_file_path,
                 "clean_content": False,
-                "overwrite": True
-            }
+                "overwrite": True,
+            },
         )
 
         assert not result.is_error
@@ -294,7 +284,8 @@ class TestScrapeUrlToFileTool:
         # Verify file actually exists and has content
         assert os.path.exists(temp_file_path)
 
-        with open(temp_file_path, 'r', encoding='utf-8') as f:
+        # Blocking I/O acceptable in test context
+        with open(temp_file_path, encoding="utf-8") as f:  # noqa: ASYNC230
             content = f.read()
 
         assert len(content) > 1000
@@ -308,7 +299,7 @@ class TestScrapeUrlToFileTool:
             {
                 "url": simple_test_url,
                 "file_path": "",  # Empty file path
-            }
+            },
         )
 
         data = json.loads(result.content[0].text)
@@ -318,17 +309,14 @@ class TestScrapeUrlToFileTool:
     async def test_respects_existing_files(self, client: Client, simple_test_url, temp_file_path):
         """Should not overwrite existing files unless overwrite=True."""
         # Create a file first
-        with open(temp_file_path, 'w') as f:
+        # Blocking I/O acceptable in test context
+        with open(temp_file_path, "w") as f:  # noqa: ASYNC230
             f.write("existing content")
 
         # Try to save without overwrite
         result = await client.call_tool(
             "scrape_url_to_file",
-            {
-                "url": simple_test_url,
-                "file_path": temp_file_path,
-                "overwrite": False
-            }
+            {"url": simple_test_url, "file_path": temp_file_path, "overwrite": False},
         )
 
         data = json.loads(result.content[0].text)
@@ -337,7 +325,8 @@ class TestScrapeUrlToFileTool:
         assert data.get("status_code") == 409 or "already exists" in data.get("error", "").lower()
 
         # Original file should be unchanged
-        with open(temp_file_path, 'r') as f:
+        # Blocking I/O acceptable in test context
+        with open(temp_file_path) as f:  # noqa: ASYNC230
             content = f.read()
         assert content == "existing content"
 
@@ -348,11 +337,7 @@ class TestScrapeUrlToFileTool:
 
         result = await client.call_tool(
             "scrape_url_to_file",
-            {
-                "url": simple_test_url,
-                "file_path": nested_path,
-                "overwrite": True
-            }
+            {"url": simple_test_url, "file_path": nested_path, "overwrite": True},
         )
 
         assert not result.is_error
@@ -374,8 +359,7 @@ class TestChunkingFunctionality:
         """Continuation tokens should follow the format 'chunk_id:index'."""
         # First call
         result = await client.call_tool(
-            "scrape_url",
-            {"url": cloudflare_test_url, "clean_content": False}
+            "scrape_url", {"url": cloudflare_test_url, "clean_content": False}
         )
 
         content = result.content[0].text
@@ -384,6 +368,7 @@ class TestChunkingFunctionality:
         if "continuation_token=" in content:
             # Extract the token format
             import re
+
             match = re.search(r'continuation_token="([^"]+)"', content)
             assert match, "Should have properly formatted continuation token"
 
@@ -400,10 +385,7 @@ class TestChunkingFunctionality:
         """Invalid continuation tokens should return an error."""
         result = await client.call_tool(
             "scrape_url",
-            {
-                "url": "https://httpbin.org/html",
-                "continuation_token": "invalid:token:format"
-            }
+            {"url": "https://httpbin.org/html", "continuation_token": "invalid:token:format"},
         )
 
         content = result.content[0].text
@@ -414,14 +396,11 @@ class TestChunkingFunctionality:
     async def test_expired_continuation_token(self, client: Client):
         """Expired or non-existent chunks should return an error."""
         # Use a fake UUID that won't exist in cache
-        fake_token = "00000000-0000-0000-0000-000000000000:0"
+        # Not a password - it's a test UUID for continuation token
+        fake_token = "00000000-0000-0000-0000-000000000000:0"  # noqa: S105
 
         result = await client.call_tool(
-            "scrape_url_raw",
-            {
-                "url": "https://httpbin.org/html",
-                "continuation_token": fake_token
-            }
+            "scrape_url_raw", {"url": "https://httpbin.org/html", "continuation_token": fake_token}
         )
 
         data = json.loads(result.content[0].text)
@@ -438,11 +417,7 @@ class TestContentQuality:
     async def test_content_is_not_error_page(self, client: Client, cloudflare_test_url):
         """Scraped content should be real content, not error pages."""
         result = await client.call_tool(
-            "scrape_url_raw",
-            {
-                "url": cloudflare_test_url,
-                "clean_content": False
-            }
+            "scrape_url_raw", {"url": cloudflare_test_url, "clean_content": False}
         )
 
         data = json.loads(result.content[0].text)
@@ -460,18 +435,15 @@ class TestContentQuality:
             # Allow some false positives, but content should be primarily real
             if indicator in content:
                 # If an error phrase appears, ensure we have substantial content
-                assert len(data["content"]) > 10000, \
+                assert len(data["content"]) > 10000, (
                     f"Content appears to be an error page: {indicator}"
+                )
 
     @pytest.mark.asyncio
     async def test_markdown_conversion_removes_scripts(self, client: Client, cloudflare_test_url):
         """Markdown conversion should remove script tags and styles."""
         result = await client.call_tool(
-            "scrape_url",
-            {
-                "url": cloudflare_test_url,
-                "clean_content": True
-            }
+            "scrape_url", {"url": cloudflare_test_url, "clean_content": True}
         )
 
         content = result.content[0].text
@@ -487,8 +459,7 @@ class TestContentQuality:
     async def test_headers_are_cleaned(self, client: Client, simple_test_url):
         """Hop-by-hop headers should be removed from raw response."""
         result = await client.call_tool(
-            "scrape_url_raw",
-            {"url": simple_test_url, "clean_content": False}
+            "scrape_url_raw", {"url": simple_test_url, "clean_content": False}
         )
 
         data = json.loads(result.content[0].text)
@@ -503,8 +474,9 @@ class TestContentQuality:
         ]
 
         for header in hop_by_hop:
-            assert header not in [h.lower() for h in headers.keys()], \
+            assert header not in [h.lower() for h in headers], (
                 f"Hop-by-hop header '{header}' should be removed"
+            )
 
 
 class TestEdgeCases:
@@ -513,24 +485,17 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_empty_url(self, client: Client):
         """Empty URL should return an error."""
-        result = await client.call_tool(
-            "scrape_url",
-            {"url": "", "clean_content": False}
-        )
+        result = await client.call_tool("scrape_url", {"url": "", "clean_content": False})
 
         # Should get an error
         assert result.is_error or "error" in result.content[0].text.lower()
 
     @pytest.mark.asyncio
-    async def test_post_method_support(self, client: Client, simple_test_url):
+    async def test_post_method_support(self, client: Client, simple_test_url):  # noqa: ARG002
         """POST method should work (though may not be appropriate for all URLs)."""
         result = await client.call_tool(
             "scrape_url_raw",
-            {
-                "url": "https://httpbin.org/post",
-                "method": "POST",
-                "clean_content": False
-            }
+            {"url": "https://httpbin.org/post", "method": "POST", "clean_content": False},
         )
 
         # Should not error
@@ -542,13 +507,11 @@ class TestEdgeCases:
     async def test_different_clean_content_settings(self, client: Client, cloudflare_test_url):
         """clean_content=True vs False should produce different output formats."""
         result_raw = await client.call_tool(
-            "scrape_url",
-            {"url": cloudflare_test_url, "clean_content": False}
+            "scrape_url", {"url": cloudflare_test_url, "clean_content": False}
         )
 
         result_clean = await client.call_tool(
-            "scrape_url",
-            {"url": cloudflare_test_url, "clean_content": True}
+            "scrape_url", {"url": cloudflare_test_url, "clean_content": True}
         )
 
         content_raw = result_raw.content[0].text

@@ -5,12 +5,13 @@ This module provides common fixtures for testing the MCP server, including
 the FastMCP client connection and test data.
 """
 
-import pytest
-import tempfile
 import os
-from pathlib import Path
-from fastmcp import Client
 import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+from fastmcp import Client
 
 # Add parent directory to path so we can import server.py
 sys.path.insert(0, str(Path(__file__).parent.parent))
