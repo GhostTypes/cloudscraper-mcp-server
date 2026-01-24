@@ -360,7 +360,7 @@ dependencies = [
     { name = "tiktoken" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -371,13 +371,16 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.10.0" },
     { name = "brotli", specifier = ">=1.0.9" },
     { name = "cloudscraper", specifier = ">=1.2.71" },
-    { name = "fastmcp", specifier = ">=3.0.0b1" },
+    { name = "fastmcp", specifier = "==3.0.0b1" },
     { name = "markdownify", specifier = ">=0.11.6" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "tiktoken", specifier = ">=0.5.0" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23.0" },
+]
 
 [[package]]
 name = "colorama"
